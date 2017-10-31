@@ -5,7 +5,7 @@ def _perlasm_cc(ctx, src, deps, opts_str):
       outputs = [out],
       inputs = deps + [src],
       arguments = [src.path, opts_str, out.path],
-      command = "perl $1 $2 > $3",
+      command = "perl $1 $2 $3",
       mnemonic = 'PerlAsmCompile')
 
   return out

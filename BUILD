@@ -2,9 +2,13 @@ package(default_visibility = ["//visibility:private"])
 
 load("//:crypto.bzl", "openssl_crypto")
 load("//:genfiles.bzl", "run_configure", "gen_headers")
+load("//:tests.bzl", "gen_tests")
 
 run_configure()
+
 gen_headers()
+
+gen_tests()
 
 cc_inc_library(
     name = "openssl_public_headers",
@@ -26,23 +30,31 @@ cc_inc_library(
 )
 
 cc_library(
-    name = "ssl",
-    hdrs = glob([
-        "openssl/ssl/*.h",
-        "openssl/ssl/*/*.h",
-    ]),
+    name = "ssl_impl",
     srcs = glob([
         "openssl/ssl/*.c",
         "openssl/ssl/*/*.c",
     ]),
+    hdrs = glob([
+        "openssl/ssl/*.h",
+        "openssl/ssl/*/*.h",
+    ]),
+    visibility = ["//visibility:public"],
     deps = [
         ":openssl_internal_headers",
         ":openssl_public_headers",
-    ]
+    ],
+)
+
+cc_inc_library(
+    name = "ssl",
+    hdrs = glob(["openssl/include/openssl/*.h"]),
+    prefix = "openssl/include",
+    deps = [":ssl_impl"],
 )
 
 openssl_crypto(
-    name = "crypto",
+    name = "crypto_impl",
     modules = [
         "aes",
         #"aria",
@@ -102,7 +114,15 @@ openssl_crypto(
         "whrlpool",
         "x509",
         "x509v3",
-    ]
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_inc_library(
+    name = "crypto",
+    hdrs = glob(["openssl/include/openssl/*.h"]),
+    prefix = "openssl/include",
+    deps = ["crypto_impl"],
 )
 
 cc_inc_library(
@@ -115,16 +135,28 @@ cc_inc_library(
     prefix = "openssl/apps",
 )
 
+cc_library(
+    name = "openssl_ui",
+    srcs = glob(
+        [
+            "openssl/apps/*.c",
+        ],
+        exclude = [
+            "openssl/apps/win32_init.c",
+            "openssl/apps/openssl.c",
+        ],
+    ),
+    deps = [
+        ":crypto",
+        ":openssl_apps_headers",
+        ":ssl",
+    ]
+)
+
 cc_binary(
     name = "openssl",
-    srcs = glob([
-        "openssl/apps/*.c",
-    ], exclude=[
-        "openssl/apps/win32_init.c",
-    ]),
+    srcs = ["openssl/apps/openssl.c"],
     deps = [
-        ":openssl_apps_headers",
-        ":crypto",
-        ":ssl",
+        ":openssl_ui",
     ],
 )

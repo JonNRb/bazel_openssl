@@ -45,6 +45,8 @@ def _module_hdrs_and_srcs(module):
     srcs_exclude.append("openssl/crypto/ec/ecp_nistz256_table.c")
   elif module == "engine":
     srcs_exclude.append("openssl/crypto/engine/eng_devcrypto.c")
+  elif module == "poly1305":
+    srcs_exclude.append("openssl/crypto/poly1305/poly1305_base2_44.c")
 
   srcs = native.glob([
       "openssl/crypto/{}/*.c".format(module),
@@ -55,9 +57,37 @@ def _module_hdrs_and_srcs(module):
 
   return hdrs, srcs
 
-def openssl_crypto(name, modules=[]):
+def _asm_srcs_and_deps(module):
+  srcs = native.glob(["openssl/crypto/{}/asm/*x86_64*.pl".format(module)])
+  deps = native.glob([
+      "openssl/crypto/perlasm/*.pl",
+      "openssl/crypto/{}/*.c".format(module),
+  ])
+
+  if module == "bn":
+    srcs.append("openssl/crypto/bn/asm/rsaz-avx2.pl")
+  elif module == "sha":
+    # sha uses the same asm for 256 and 512 and checks the name of the output?!
+    native.genrule(
+        name = "gensha256perlasm",
+        srcs = ["openssl/crypto/sha/asm/sha512-x86_64.pl"],
+        outs = ["openssl/crypto/sha/asm/sha256-x86_64.pl"],
+        cmd = "mv $< $@",
+    )
+    srcs.append("openssl/crypto/sha/asm/sha256-x86_64.pl")
+    native.genrule(
+        name = "genrelxlate",
+        srcs = ["openssl/crypto/perlasm/x86_64-xlate.pl"],
+        outs = ["openssl/crypto/sha/asm/x86_64-xlate.pl"],
+        cmd = "mv $< $@",
+    )
+    deps.append("openssl/crypto/sha/asm/x86_64-xlate.pl")
+
+  return srcs, deps
+
+def openssl_crypto(name, modules=[], visibility=[]):
   native.cc_inc_library(
-      name = "openssl_crypto_internal_headers",
+      name = "{}_internal_headers".format(name),
       hdrs = native.glob(["openssl/crypto/include/internal/*.h"]) + [
           "openssl/crypto/include/internal/bn_conf.h",
           "openssl/crypto/include/internal/dso_conf.h",
@@ -74,24 +104,24 @@ def openssl_crypto(name, modules=[]):
         "openssl/crypto/{}/arch/*.h".format(module),
     ])
     if len(inc_headers) != 0:
-      lib = "openssl_crypto_{}_include_noprefix".format(module)
+      lib = "{}_{}_include_noprefix".format(name, module)
       native.cc_inc_library(
           name = lib,
           hdrs = inc_headers,
           deps = [
-              ":openssl_crypto_internal_headers",
+              ":{}_internal_headers".format(name),
               ":openssl_public_headers",
               ":openssl_internal_headers",
           ],
           prefix = "openssl/crypto/{}".format(module),
       )
       header_libs.append(":" + lib)
-    lib = "openssl_crypto_{}_include".format(module)
+    lib = "{}_{}_include".format(name, module)
     native.cc_library(
         name = lib,
         hdrs = inc_headers,
         deps = [
-            ":openssl_crypto_internal_headers",
+            ":{}_internal_headers".format(name),
             ":openssl_public_headers",
             ":openssl_internal_headers",
         ],
@@ -99,33 +129,31 @@ def openssl_crypto(name, modules=[]):
     header_libs.append(":" + lib)
 
   for module in modules:
-    lib = "openssl_crypto_{}".format(module)
+    lib = "{}_{}".format(name, module)
     hdrs, srcs = _module_hdrs_and_srcs(module)
     native.cc_library(
         name = lib,
         hdrs = hdrs,
         srcs = srcs,
         deps = [
-            ":openssl_crypto_internal_headers",
+            ":{}_internal_headers".format(name),
             ":openssl_public_headers",
             ":openssl_internal_headers",
         ] + header_libs,
         copts = CFLAGS,
         linkstatic = 1,
+        alwayslink = 1,
     )
     libs.append(":" + lib)
 
     # compile perlasm sources for each included module
-    asm_srcs = native.glob(["openssl/crypto/{}/asm/*-x86_64.pl".format(module)])
+    asm_srcs, asm_deps = _asm_srcs_and_deps(module)
     if len(asm_srcs) != 0:
-      asm_lib = "openssl_crypto_{}_asm".format(module)
+      asm_lib = "{}_{}_asm".format(name, module)
       perlasm_library(
           name = asm_lib,
           srcs = asm_srcs,
-          deps = native.glob([
-              "openssl/crypto/perlasm/*.pl",
-              "openssl/crypto/{}/*.c".format(module),
-          ]),
+          deps = asm_deps,
           perl_copts = [PERLASM_SCHEME],
           copts = CFLAGS,
           linkstatic = 1,
@@ -133,7 +161,7 @@ def openssl_crypto(name, modules=[]):
       libs.append(":" + asm_lib)
 
   perlasm_library(
-      name = "openssl_crypto_asm",
+      name = "{}_asm".format(name),
       srcs = [
           "openssl/crypto/x86_64cpuid.pl"
       ],
@@ -144,7 +172,7 @@ def openssl_crypto(name, modules=[]):
   )
 
   native.cc_inc_library(
-      name = "openssl_crypto_buildinf",
+      name = "{}_buildinf".format(name),
       hdrs = ["openssl/crypto/buildinf.h"],
       prefix = "openssl/crypto",
   )
@@ -160,16 +188,19 @@ def openssl_crypto(name, modules=[]):
       ], exclude=[
           "openssl/crypto/armcap.c",
           "openssl/crypto/LPdir_*.c",
+          "openssl/crypto/mem_clr.c",
           "openssl/crypto/ppccap.c",
           "openssl/crypto/s390xcap.c",
           "openssl/crypto/sparcv9cap.c",
       ]),
       copts = CFLAGS,
       deps = libs + [
-          ":openssl_crypto_asm",
-          ":openssl_crypto_buildinf",
-          ":openssl_crypto_internal_headers",
+          ":{}_asm".format(name),
+          ":{}_buildinf".format(name),
+          ":{}_internal_headers".format(name),
           ":openssl_public_headers",
           ":openssl_internal_headers",
       ],
+      linkstatic = 1,
+      visibility = visibility,
   )
