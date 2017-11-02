@@ -75,6 +75,9 @@ def _make_test(test):
         executable = ":openssl_aborttest_bin",
     )
     return
+  elif test == "openssl/test/asynctest.c" or \
+      test == "openssl/test/memleaktest.c":
+    deps.remove(":testutil")
   elif test == "openssl/test/asynciotest.c":
     data.append("openssl/apps/server.pem")
     args.append("$(location :openssl/apps/server.pem)")
@@ -269,6 +272,7 @@ def gen_tests():
       ] + test_utils,
       deps = [
           ":crypto",
+          ":ssl",
       ]
   )
 
@@ -286,8 +290,8 @@ def gen_tests():
       name = "test_headers",
       hdrs = native.glob(["openssl/test/*.h"]),
       strip_include_prefix = "openssl/test",
-      deps = [":testutil_impl"],
   )
 
   for test in tests:
     _make_test(test)
+

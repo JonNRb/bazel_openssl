@@ -4,6 +4,18 @@ load("//:crypto.bzl", "openssl_crypto")
 load("//:genfiles.bzl", "run_configure", "gen_headers")
 load("//:tests.bzl", "gen_tests")
 
+config_setting(
+    name = "linux",
+    values = {"cpu": "k8"},
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos",
+    values = {"cpu": "darwin"},
+    visibility = ["//visibility:public"],
+)
+
 run_configure()
 
 gen_headers()
@@ -51,7 +63,10 @@ cc_library(
     hdrs = glob(["openssl/include/openssl/*.h"]),
     strip_include_prefix = "openssl/include",
     visibility = ["//visibility:public"],
-    deps = [":ssl_impl"],
+    deps = [
+        ":ssl_impl",
+        ":crypto",
+    ],
 )
 
 openssl_crypto(

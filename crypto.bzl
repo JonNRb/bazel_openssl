@@ -1,4 +1,4 @@
-load("//:perlasm.bzl", "perlasm_library")
+load("//:perlasm.bzl", "perlasm_sources")
 
 CFLAGS = [
     "-DDSO_DLFCN",
@@ -11,6 +11,7 @@ CFLAGS = [
     "-DOPENSSL_BN_ASM_MONT",
     "-DOPENSSL_BN_ASM_MONT5",
     "-DOPENSSL_BN_ASM_GF2m",
+    "-DOPENSSL_USE_NODELETE",
     "-DSHA1_ASM",
     "-DSHA256_ASM",
     "-DSHA512_ASM",
@@ -29,8 +30,20 @@ CFLAGS = [
     "-DL_ENDIAN",
 ]
 
-PERLASM_SCHEME = "macosx"
+LDFLAGS = select({
+    ":linux": [
+        "-ldl",
+        "-lpthread",
+    ],
+    ":macos": [],
+})
 
+PERLASM_COPTS = select({
+    ":macos": ["macosx"],
+    ":linux": ["elf"],
+})
+
+# exceptions are based on `build.info` files in the OpenSSL tree
 def _module_hdrs_and_srcs(module):
   srcs_include, srcs_exclude, hdrs_include, hdrs_exclude = [], [], [], []
 
@@ -38,6 +51,11 @@ def _module_hdrs_and_srcs(module):
     srcs_exclude.append("openssl/crypto/aes/aes_cbc.c")
     srcs_exclude.append("openssl/crypto/aes/aes_core.c")
     srcs_exclude.append("openssl/crypto/aes/aes_x86core.c")
+  elif module == "camellia":
+    srcs_exclude.append("openssl/crypto/camellia/camellia.c")
+    srcs_exclude.append("openssl/crypto/camellia/cmll_cbc.c")
+  elif module == "chacha":
+    srcs_exclude.append("openssl/crypto/chacha/chacha_enc.c")
   elif module == "des":
     hdrs_include.append("openssl/crypto/des/ncbc_enc.c")
     srcs_exclude.append("openssl/crypto/des/ncbc_enc.c")
@@ -45,8 +63,14 @@ def _module_hdrs_and_srcs(module):
     srcs_exclude.append("openssl/crypto/ec/ecp_nistz256_table.c")
   elif module == "engine":
     srcs_exclude.append("openssl/crypto/engine/eng_devcrypto.c")
+  elif module == "rc4":
+    srcs_exclude.append("openssl/crypto/rc4/rc4_enc.c")
+    srcs_exclude.append("openssl/crypto/rc4/rc4_skey.c")
   elif module == "poly1305":
     srcs_exclude.append("openssl/crypto/poly1305/poly1305_base2_44.c")
+    srcs_exclude.append("openssl/crypto/poly1305/poly1305_ieee754.c")
+  elif module == "whrlpool":
+    srcs_exclude.append("openssl/crypto/whrlpool/wp_block.c")
 
   srcs = native.glob([
       "openssl/crypto/{}/*.c".format(module),
@@ -60,7 +84,6 @@ def _module_hdrs_and_srcs(module):
 def _asm_srcs_and_deps(module):
   srcs = native.glob(["openssl/crypto/{}/asm/*x86_64*.pl".format(module)])
   deps = native.glob([
-      "openssl/crypto/perlasm/*.pl",
       "openssl/crypto/{}/*.c".format(module),
   ])
 
@@ -75,6 +98,7 @@ def _asm_srcs_and_deps(module):
         cmd = "mv $< $@",
     )
     srcs.append("openssl/crypto/sha/asm/sha256-x86_64.pl")
+
     native.genrule(
         name = "genrelxlate",
         srcs = ["openssl/crypto/perlasm/x86_64-xlate.pl"],
@@ -83,9 +107,12 @@ def _asm_srcs_and_deps(module):
     )
     deps.append("openssl/crypto/sha/asm/x86_64-xlate.pl")
 
+    srcs.remove("openssl/crypto/sha/asm/keccak1600-x86_64.pl")
+
   return srcs, deps
 
 def openssl_crypto(name, modules=[], visibility=[]):
+
   native.cc_library(
       name = "{}_internal_headers".format(name),
       hdrs = native.glob(["openssl/crypto/include/internal/*.h"]) + [
@@ -96,7 +123,6 @@ def openssl_crypto(name, modules=[], visibility=[]):
   )
 
   header_libs = []
-  libs = []
 
   for module in modules:
     inc_headers = native.glob([
@@ -128,48 +154,20 @@ def openssl_crypto(name, modules=[], visibility=[]):
     )
     header_libs.append(":" + lib)
 
+  hdrs = []
+  srcs = []
+  asm_deps = []
+  asm_srcs = []
+
   for module in modules:
-    lib = "{}_{}".format(name, module)
-    hdrs, srcs = _module_hdrs_and_srcs(module)
-    native.cc_library(
-        name = lib,
-        hdrs = hdrs,
-        srcs = srcs,
-        deps = [
-            ":{}_internal_headers".format(name),
-            ":openssl_public_headers",
-            ":openssl_internal_headers",
-        ] + header_libs,
-        copts = CFLAGS,
-        linkstatic = 1,
-        alwayslink = 1,
-    )
-    libs.append(":" + lib)
+    lib_hdrs, lib_srcs = _module_hdrs_and_srcs(module)
+    hdrs += lib_hdrs
+    srcs += lib_srcs
 
     # compile perlasm sources for each included module
-    asm_srcs, asm_deps = _asm_srcs_and_deps(module)
-    if len(asm_srcs) != 0:
-      asm_lib = "{}_{}_asm".format(name, module)
-      perlasm_library(
-          name = asm_lib,
-          srcs = asm_srcs,
-          deps = asm_deps,
-          perl_copts = [PERLASM_SCHEME],
-          copts = CFLAGS,
-          linkstatic = 1,
-      )
-      libs.append(":" + asm_lib)
-
-  perlasm_library(
-      name = "{}_asm".format(name),
-      srcs = [
-          "openssl/crypto/x86_64cpuid.pl"
-      ],
-      deps = native.glob(["openssl/crypto/perlasm/*.pl"]),
-      perl_copts = [PERLASM_SCHEME],
-      copts = CFLAGS,
-      linkstatic = 1,
-  )
+    lib_asm_srcs, lib_asm_deps = _asm_srcs_and_deps(module)
+    asm_deps += lib_asm_deps
+    asm_srcs += lib_asm_srcs
 
   native.cc_library(
       name = "{}_buildinf".format(name),
@@ -177,13 +175,21 @@ def openssl_crypto(name, modules=[], visibility=[]):
       strip_include_prefix = "openssl/crypto",
   )
 
+  perlasm_sources(
+      name = "{}_asm".format(name),
+      srcs = ["openssl/crypto/x86_64cpuid.pl"] + asm_srcs,
+      deps = native.glob(["openssl/crypto/perlasm/*.pl"]) + asm_deps,
+      copts = PERLASM_COPTS,
+  )
+  srcs.append(":{}_asm".format(name))
+
   native.cc_library(
       name = name,
-      hdrs = native.glob([
+      hdrs = hdrs + native.glob([
           "openssl/crypto/*.h",
           "openssl/crypto/LPdir_*.c",
       ]),
-      srcs = native.glob([
+      srcs = srcs + native.glob([
           "openssl/crypto/*.c",
       ], exclude=[
           "openssl/crypto/armcap.c",
@@ -194,13 +200,12 @@ def openssl_crypto(name, modules=[], visibility=[]):
           "openssl/crypto/sparcv9cap.c",
       ]),
       copts = CFLAGS,
-      deps = libs + [
-          ":{}_asm".format(name),
+      linkopts = LDFLAGS,
+      deps = header_libs + [
           ":{}_buildinf".format(name),
           ":{}_internal_headers".format(name),
           ":openssl_public_headers",
           ":openssl_internal_headers",
       ],
-      linkstatic = 1,
       visibility = visibility,
   )
