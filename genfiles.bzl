@@ -13,9 +13,10 @@ def run_configure():
       ]),
       tools = ["openssl/config"],
       outs = ["openssl/configdata.pm"],
-      cmd = "cd openssl;" +
-            "./config;" +
-            "mv configdata.pm ../$(location :openssl/configdata.pm);" +
+      cmd = "bazel_root=$$(pwd);" +
+            "cd $$(dirname $(location :openssl/config));" +
+            "./config > /dev/null;" +
+            "mv configdata.pm $$bazel_root/$(location :openssl/configdata.pm);" +
             "",
   )
 
@@ -40,20 +41,21 @@ def gen_headers():
           "openssl/crypto/buildinf.h",
           "openssl/include/openssl/opensslconf.h",
       ],
-      cmd = "cp $(location openssl/configdata.pm) openssl/;" +
-            "cd openssl;" +
+      cmd = "bazel_root=$$(pwd);" +
+            "cd $$(dirname $(location :openssl/crypto/include/internal/bn_conf.h.in))/../../..;" +
+            "cp -n $$bazel_root/$(location openssl/configdata.pm) .;" +
             "perl apps/progs.pl apps/openssl" +
-            "  > ../$(location :openssl/apps/progs.h);" +
+            "  > $$bazel_root/$(location :openssl/apps/progs.h);" +
             "perl -I. -Mconfigdata util/dofile.pl -oMakefile" +
-            "  ../$(location openssl/crypto/include/internal/bn_conf.h.in)" +
-            "  > ../$(location :openssl/crypto/include/internal/bn_conf.h);" +
+            "  $$bazel_root/$(location openssl/crypto/include/internal/bn_conf.h.in)" +
+            "  > $$bazel_root/$(location :openssl/crypto/include/internal/bn_conf.h);" +
             "perl -I. -Mconfigdata util/dofile.pl -oMakefile" +
-            "  ../$(location openssl/crypto/include/internal/dso_conf.h.in)" +
-            "  > ../$(location :openssl/crypto/include/internal/dso_conf.h);" +
+            "  $$bazel_root/$(location openssl/crypto/include/internal/dso_conf.h.in)" +
+            "  > $$bazel_root/$(location :openssl/crypto/include/internal/dso_conf.h);" +
             "perl -I. -Mconfigdata util/dofile.pl -oMakefile" +
-            "  ../$(location openssl/include/openssl/opensslconf.h.in)" +
-            "  > ../$(location :openssl/include/openssl/opensslconf.h);" +
+            "  $$bazel_root/$(location openssl/include/openssl/opensslconf.h.in)" +
+            "  > $$bazel_root/$(location :openssl/include/openssl/opensslconf.h);" +
             "perl util/mkbuildinf.pl \"\\\"http://bazel.build/\\\"\"" +
-            "  > ../$(location :openssl/crypto/buildinf.h);" +
+            "  > $$bazel_root/$(location :openssl/crypto/buildinf.h);" +
             "",
   )

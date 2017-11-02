@@ -10,7 +10,7 @@ gen_headers()
 
 gen_tests()
 
-cc_inc_library(
+cc_library(
     name = "openssl_public_headers",
     hdrs = glob([
         "openssl/include/openssl/*.h",
@@ -18,15 +18,15 @@ cc_inc_library(
     ]) + [
         "openssl/include/openssl/opensslconf.h",
     ],
-    prefix = "openssl/include",
+    strip_include_prefix = "openssl/include",
 )
 
-cc_inc_library(
+cc_library(
     name = "openssl_internal_headers",
     hdrs = [
         "openssl/e_os.h",
     ],
-    prefix = "openssl",
+    strip_include_prefix = "openssl",
 )
 
 cc_library(
@@ -46,10 +46,11 @@ cc_library(
     ],
 )
 
-cc_inc_library(
+cc_library(
     name = "ssl",
     hdrs = glob(["openssl/include/openssl/*.h"]),
-    prefix = "openssl/include",
+    strip_include_prefix = "openssl/include",
+    visibility = ["//visibility:public"],
     deps = [":ssl_impl"],
 )
 
@@ -115,24 +116,24 @@ openssl_crypto(
         "x509",
         "x509v3",
     ],
-    visibility = ["//visibility:public"],
 )
 
-cc_inc_library(
+cc_library(
     name = "crypto",
     hdrs = glob(["openssl/include/openssl/*.h"]),
-    prefix = "openssl/include",
-    deps = ["crypto_impl"],
+    strip_include_prefix = "openssl/include",
+    visibility = ["//visibility:public"],
+    deps = [":crypto_impl"],
 )
 
-cc_inc_library(
+cc_library(
     name = "openssl_apps_headers",
     hdrs = glob([
         "openssl/apps/*.h",
     ]) + [
         "openssl/apps/progs.h",
     ],
-    prefix = "openssl/apps",
+    strip_include_prefix = "openssl/apps",
 )
 
 cc_library(
@@ -150,7 +151,7 @@ cc_library(
         ":crypto",
         ":openssl_apps_headers",
         ":ssl",
-    ]
+    ],
 )
 
 cc_binary(

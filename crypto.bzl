@@ -86,13 +86,13 @@ def _asm_srcs_and_deps(module):
   return srcs, deps
 
 def openssl_crypto(name, modules=[], visibility=[]):
-  native.cc_inc_library(
+  native.cc_library(
       name = "{}_internal_headers".format(name),
       hdrs = native.glob(["openssl/crypto/include/internal/*.h"]) + [
           "openssl/crypto/include/internal/bn_conf.h",
           "openssl/crypto/include/internal/dso_conf.h",
       ],
-      prefix = "openssl/crypto/include",
+      strip_include_prefix = "openssl/crypto/include",
   )
 
   header_libs = []
@@ -105,7 +105,7 @@ def openssl_crypto(name, modules=[], visibility=[]):
     ])
     if len(inc_headers) != 0:
       lib = "{}_{}_include_noprefix".format(name, module)
-      native.cc_inc_library(
+      native.cc_library(
           name = lib,
           hdrs = inc_headers,
           deps = [
@@ -113,7 +113,7 @@ def openssl_crypto(name, modules=[], visibility=[]):
               ":openssl_public_headers",
               ":openssl_internal_headers",
           ],
-          prefix = "openssl/crypto/{}".format(module),
+          strip_include_prefix = "openssl/crypto/{}".format(module),
       )
       header_libs.append(":" + lib)
     lib = "{}_{}_include".format(name, module)
@@ -171,10 +171,10 @@ def openssl_crypto(name, modules=[], visibility=[]):
       linkstatic = 1,
   )
 
-  native.cc_inc_library(
+  native.cc_library(
       name = "{}_buildinf".format(name),
       hdrs = ["openssl/crypto/buildinf.h"],
-      prefix = "openssl/crypto",
+      strip_include_prefix = "openssl/crypto",
   )
 
   native.cc_library(

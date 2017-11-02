@@ -191,6 +191,7 @@ def _make_test(test):
     args.append("openssl/apps/server.pem")
     args.append("openssl/apps/server.pem")
   elif test == "openssl/test/shlibloadtest.c":
+    # no trivial way to port this i think
     return
   elif test == "openssl/test/v3ext.c":
     data.append("openssl/test/certs/pathlen.pem")
@@ -271,20 +272,20 @@ def gen_tests():
       ]
   )
 
-  native.cc_inc_library(
+  native.cc_library(
       name = "testutil",
       hdrs = native.glob([
           "openssl/test/*.h",
           "openssl/test/testutil/*.h",
       ]),
-      prefix = "openssl/test",
+      strip_include_prefix = "openssl/test",
       deps = [":testutil_impl"],
   )
 
-  native.cc_inc_library(
+  native.cc_library(
       name = "test_headers",
       hdrs = native.glob(["openssl/test/*.h"]),
-      prefix = "openssl/test",
+      strip_include_prefix = "openssl/test",
       deps = [":testutil_impl"],
   )
 
